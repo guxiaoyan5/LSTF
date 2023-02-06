@@ -10,7 +10,7 @@ def scaler_Loss(scaler: StandardScaler):
 
     def loss(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
         y_true = scaler.inverse_transform(y_true)
-        # y_pred = scaler.inverse_transform(y_pred)
+        y_pred = scaler.inverse_transform(y_pred)
 
         return l(y_true, y_pred)
 
