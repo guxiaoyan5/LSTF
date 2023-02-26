@@ -27,7 +27,8 @@ class Trainer(object):
     def __init__(self, model, model_name, loss, optimizer, train_loader, val_loader,
                  test_loader, scaler, lr_scheduler, device, log_dir, grad_norm,
                  max_grad_norm, log_step, lr_decay, epochs, early_stop, early_stop_patience, mae_thresh, mape_thresh,
-                 dataset, decay_interval, decay_r, init_r, final_r, l, args=None):
+                 dataset, decay_interval, decay_r, init_r, final_r, l, use_curriculum_learning=True, step_size=5,
+                 args=None):
         super(Trainer, self).__init__()
         self.model = model
         self.loss = loss
@@ -68,8 +69,11 @@ class Trainer(object):
         self.init_r = init_r
         self.final_r = final_r
         self.l = l
+        self.use_curriculum_learning = use_curriculum_learning
+        self.step_size = step_size
+        self.args = args
 
-    def val_epoch(self, epoch, val_dataloader):
+    def val_epoch(self, epoch):
         self.model.eval()
         total_val_loss = 0
 
@@ -79,18 +83,21 @@ class Trainer(object):
                 loss = self.loss(output, y)
                 if not torch.isnan(loss):
                     total_val_loss += loss.item()
-        val_loss = total_val_loss / len(val_dataloader)
+        val_loss = total_val_loss / len(self.val_loader)
         self.logger.info('**********Val Epoch {}: average Loss: {:.6f}'.format(epoch, val_loss))
         return val_loss
 
-    def train_epoch(self, epoch, batches_seen):
+    def train_epoch(self, epoch, batches_seen, task_level=None):
         self.model.train()
         total_loss = 0
         for batch_idx, (x, y) in enumerate(self.train_loader):
             self.optimizer.zero_grad(set_to_none=True)
             output, structure_kl_loss_sum = self.model(x, decay_interval=self.decay_interval, decay_r=self.decay_r,
                                                        current_epoch=epoch, init_r=self.init_r, final_r=self.final_r)
-            loss = self.loss(output, y)
+            if self.use_curriculum_learning and task_level is not None:
+                loss = self.loss(output[:, :task_level, ...], y[:, :task_level, ...])
+            else:
+                loss = self.loss(output, y)
             if batch_idx % self.log_step == 0:
                 self.logger.info('Train Epoch {}: {}/{} Loss: {:.6f}'.format(
                     epoch, batch_idx, self.train_per_epoch, loss.item()))
@@ -123,10 +130,14 @@ class Trainer(object):
         val_loss_list = []
         start_time = time.time()
         batches_seen = 0
+        task_level = 1
         for epoch in range(1, self.epochs + 1):
-            train_epoch_loss, batches_seen = self.train_epoch(epoch, batches_seen)
-            val_dataloader = self.val_loader
-            val_epoch_loss = self.val_epoch(epoch, val_dataloader)
+            if epoch % self.step_size == 0:
+                task_level += 1
+            if task_level > self.args.y_offsets:
+                task_level = self.args.y_offsets
+            train_epoch_loss, batches_seen = self.train_epoch(epoch, batches_seen, task_level)
+            val_epoch_loss = self.val_epoch(epoch)
             train_loss_list.append(train_epoch_loss)
             val_loss_list.append(val_epoch_loss)
             if train_epoch_loss > 1e6:
@@ -189,43 +200,6 @@ class Trainer(object):
             mae, rmse, mape * 100))
 
 
-class AddTrainer(Trainer):
-    def __init__(self, model, model_name, loss, optimizer, train_loader, val_loader, test_loader, scaler, lr_scheduler,
-                 device, log_dir, grad_norm, max_grad_norm, log_step, lr_decay, epochs, early_stop, early_stop_patience,
-                 mae_thresh, mape_thresh, dataset, decay_interval, decay_r, init_r, final_r, l, step):
-        super().__init__(model, model_name, loss, optimizer, train_loader, val_loader, test_loader, scaler,
-                         lr_scheduler, device, log_dir, grad_norm, max_grad_norm, log_step, lr_decay, epochs,
-                         early_stop, early_stop_patience, mae_thresh, mape_thresh, dataset, decay_interval, decay_r,
-                         init_r, final_r, l)
-        self.step = step
-
-    def train_epoch(self, epoch, batches_seen):
-        self.model.train()
-        total_loss = 0
-        for batch_idx, (x, y) in enumerate(self.train_loader):
-            output, structure_kl_loss_sum = self.model(x, decay_interval=self.decay_interval, decay_r=self.decay_r,
-                                                       current_epoch=epoch, init_r=self.init_r, final_r=self.final_r)
-            loss = self.loss(output, y)
-            if batch_idx % (self.log_step * self.step) == 0:
-                self.logger.info('Train Epoch {}: {}/{} Loss: {:.6f}'.format(
-                    epoch, batch_idx, self.train_per_epoch, loss.item()))
-            total_loss += loss.item()
-            loss = loss + self.l * structure_kl_loss_sum
-            loss.backward()
-            batches_seen += 1
-            if batches_seen % self.step == 0:
-                if self.grad_norm:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
-                self.optimizer.step()
-                self.optimizer.zero_grad(set_to_none=True)
-
-        train_epoch_loss = total_loss / self.train_per_epoch
-        self.logger.info('**********Train Epoch {}: averaged Loss: {:.6f}'.format(epoch, train_epoch_loss))
-        if self.lr_decay:
-            self.lr_scheduler.step()
-        return train_epoch_loss, batches_seen
-
-
 class NNITrainer(Trainer):
     def train(self):
         best_model = None
@@ -235,10 +209,14 @@ class NNITrainer(Trainer):
         val_loss_list = []
         start_time = time.time()
         batches_seen = 0
+        task_level = 1
         for epoch in range(1, self.epochs + 1):
-            train_epoch_loss, batches_seen = self.train_epoch(epoch, batches_seen)
-            val_dataloader = self.val_loader
-            val_epoch_loss = self.val_epoch(epoch, val_dataloader)
+            if epoch % self.step_size == 0:
+                task_level += 1
+            if task_level > self.args.y_offsets:
+                task_level = self.args.y_offsets
+            train_epoch_loss, batches_seen = self.train_epoch(epoch, batches_seen, task_level)
+            val_epoch_loss = self.val_epoch(epoch)
             train_loss_list.append(train_epoch_loss)
             val_loss_list.append(val_epoch_loss)
             nni.report_intermediate_result({"val loss": val_epoch_loss, "train loss": train_epoch_loss})

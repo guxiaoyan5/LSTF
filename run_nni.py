@@ -11,7 +11,7 @@ from os.path import join
 
 from dataset.load_dataset import get_data_loader, load_distance
 from models.LDSTGNN import LDSTGNN
-from train.train import Trainer, print_model_parameters, AddTrainer, NNITrainer
+from train.train import Trainer, print_model_parameters, NNITrainer
 from utils.adjacency import *
 from utils.loss import scaler_Loss
 
@@ -23,18 +23,18 @@ args.add_argument('--val_ratio', default=0.2, type=float)
 args.add_argument('--test_ratio', default=0.2, type=float)
 args.add_argument('--y_offsets', default=12, type=int)
 args.add_argument('--x_offsets', default=12, type=int)
-args.add_argument('--input_dim', default=1, type=int)
+args.add_argument('--input_dim', default=2, type=int)
 args.add_argument('--output_dim', default=1, type=int)
 args.add_argument('--num_workers', default=0, type=int)
 args.add_argument('--pin_memory', default=False, type=bool)
 # train
 args.add_argument('--batch_size', default=64, type=int)
-args.add_argument('--step', default=-1, type=int)
 args.add_argument('--epochs', default=100, type=int)
 args.add_argument('--lr_init', default=0.001, type=float)
 args.add_argument('--lr_decay', default=True, type=eval)
 args.add_argument('--early_stop', default=True, type=eval)
-args.add_argument('--early_stop_patience', default=10, type=int)
+args.add_argument('--early_stop_patience', default=60, type=int)
+args.add_argument('--use_curriculum_learning', action='store_true', default=False)
 args.add_argument('--grad_norm', default=True, type=eval)
 args.add_argument('--max_grad_norm', default=5, type=int)
 args.add_argument('--weight_decay', default=0., type=eval)
@@ -72,7 +72,8 @@ def main(params):
         "%m-%d-%Hh%Mm") + args.comment + "_" + args.dataset + "_" + args.model_name + "nb_block" + str(
         params['nb_block']) + "_K" + str(params['K']) + "_nb_filter" + str(
         params['nb_filter']) + "_d_model" + str(
-        params['d_model']) + "_d_k" + str(params['d_kv']) + "_d_v" + str(params['d_kv'])
+        params['d_model']) + "_d_k" + str(params['d_kv']) + "_d_v" + str(params['d_kv']) + "_n_heads" + str(
+        params["n_heads"])
     log_dir = join(args.path, args.dataset, save_name)
 
     if os.path.exists(log_dir):
@@ -86,10 +87,11 @@ def main(params):
                                                                                batch_size=args.batch_size,
                                                                                test_ratio=args.test_ratio,
                                                                                val_ratio=args.val_ratio,
-                                                                               device=device, add_time_in_day=False)
-    model = LDSTGNN(args.input_dim, params['nb_block'], args.input_dim, params['K'], params['nb_filter'],
-                    1, args.y_offsets, args.x_offsets, num_nodes, params['d_model'],
-                    params['d_kv'], params['d_kv'], params['K'], args.dropout).to(device)
+                                                                               device=device, add_time_in_day=True)
+
+    model = LDSTGNN(1, params["nb_block"], args.input_dim, params["K"], params["nb_filter"], 1, args.y_offsets,
+                    args.x_offsets, num_nodes, params["d_model"], params["d_kv"], params["d_kv"], params["n_heads"],
+                    args.dropout).to(device)
     for p in model.parameters():
         if p.dim() > 1:
             nn.init.xavier_uniform_(p)
@@ -103,20 +105,13 @@ def main(params):
     # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer=optimizer, T_0=args.T_0,
     #                                                                     T_mult=args.T_mult)
     lr_scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=params['gamma'])
-    if args.step != -1:
-        trainer = AddTrainer(model, args.model_name, loss, optimizer, train_loader, val_loader,
-                             test_loader, scaler, lr_scheduler, device, log_dir, args.grad_norm,
-                             args.max_grad_norm, args.log_step, args.lr_decay, args.epochs, args.early_stop,
-                             args.early_stop_patience, args.mae_thresh, args.mape_thresh, args.dataset,
-                             args.decay_interval,
-                             args.decay_r, args.init_r, args.final_r, params['l'], args.step)
-    else:
-        trainer = NNITrainer(model, args.model_name, loss, optimizer, train_loader, val_loader,
-                             test_loader, scaler, lr_scheduler, device, log_dir, args.grad_norm,
-                             args.max_grad_norm, args.log_step, args.lr_decay, args.epochs, args.early_stop,
-                             args.early_stop_patience, args.mae_thresh, args.mape_thresh, args.dataset,
-                             args.decay_interval,
-                             args.decay_r, args.init_r, args.final_r, params['l'])
+
+    trainer = NNITrainer(model, args.model_name, loss, optimizer, train_loader, val_loader,
+                         test_loader, scaler, lr_scheduler, device, log_dir, args.grad_norm,
+                         args.max_grad_norm, args.log_step, args.lr_decay, args.epochs, args.early_stop,
+                         args.early_stop_patience, args.mae_thresh, args.mape_thresh, args.dataset,
+                         args.decay_interval, args.decay_r, args.init_r, args.final_r, params['l'],
+                         use_curriculum_learning=args.use_curriculum_learning, args=args)
     trainer.train()
 
 
