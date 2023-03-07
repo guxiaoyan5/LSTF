@@ -10,10 +10,11 @@
           </mappings>
           <excludedPaths>
             <excludedPath local="true" path="$PROJECT_DIR$/data" />
+            <excludedPath path="/data/guyanjie/LSTF/logs" />
           </excludedPaths>
         </serverdata>
       </paths>
-      <paths name="root@region-3.seetacloud.com:18759">
+      <paths name="root@region-41.seetacloud.com:48166">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />

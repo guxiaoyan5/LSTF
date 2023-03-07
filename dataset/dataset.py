@@ -16,7 +16,7 @@ class STDataset(Dataset):
         if self.dataset.startswith("PEMS"):
             return self.x[item], self.y[item][:, :, 0].unsqueeze(-1)
         else:
-            return self.x[item], self.y[item]
+            return self.x[item], self.y[item][:, :, 0].unsqueeze(-1)
 
     def __len__(self):
         return len(self.x)

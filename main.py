@@ -15,25 +15,26 @@ from utils.loss import scaler_Loss
 
 args = argparse.ArgumentParser(description='arguments')
 # data
-args.add_argument('--dataset', default="PEMS03", type=str)
+args.add_argument('--dataset', default="NAVER-Seoul", type=str)
 args.add_argument('--root', default="data", type=str)
-args.add_argument('--val_ratio', default=0.2, type=float)
+args.add_argument('--val_ratio', default=0.1, type=float)
 args.add_argument('--test_ratio', default=0.2, type=float)
-args.add_argument('--y_offsets', default=12, type=int)
-args.add_argument('--x_offsets', default=12, type=int)
+args.add_argument('--y_offsets', default=18, type=int)
+args.add_argument('--x_offsets', default=18, type=int)
 args.add_argument('--input_dim', default=2, type=int)
 args.add_argument('--output_dim', default=1, type=int)
 args.add_argument('--num_workers', default=0, type=int)
 args.add_argument('--pin_memory', default=False, type=bool)
 # train
-args.add_argument('--batch_size', default=64, type=int)
+args.add_argument('--batch_size', default=32, type=int)
 args.add_argument('--epochs', default=100, type=int)
 args.add_argument('--lr_init', default=0.001, type=float)
 args.add_argument('--lr_decay', default=True, type=eval)
 args.add_argument('--gamma', default=0.9, type=float)
 args.add_argument('--early_stop', default=True, type=eval)
 args.add_argument('--early_stop_patience', default=60, type=int)
-args.add_argument('--use_curriculum_learning', action='store_true', default=False)
+# args.add_argument('--use_curriculum_learning', action='store_true', default=False)
+args.add_argument('--use_curriculum_learning', default=False)
 args.add_argument('--grad_norm', default=True, type=eval)
 args.add_argument('--max_grad_norm', default=5, type=int)
 args.add_argument('--weight_decay', default=0., type=eval)
@@ -61,7 +62,7 @@ args.add_argument('--path', default='./logs', type=str)
 args.add_argument('--log_step', default=20, type=int)
 args.add_argument('--comment', default="", type=str)
 args.add_argument('--model_name', default="LDSTGNN", type=str)
-args.add_argument('--cuda', default=3, type=int)
+args.add_argument('--cuda', default=5, type=int)
 
 args = args.parse_known_args()[0]
 random.seed(args.seed)
@@ -84,13 +85,20 @@ if os.path.exists(log_dir):
 else:
     os.makedirs(log_dir)
 
+# train_loader, val_loader, test_loader, scaler, num_nodes = get_data_loader(args.dataset, root=args.root,
+#                                                                            x_offsets=args.x_offsets,
+#                                                                            y_offsets=args.y_offsets,
+#                                                                            batch_size=args.batch_size,
+#                                                                            test_ratio=args.test_ratio,
+#                                                                            val_ratio=args.val_ratio,
+#                                                                            device=device, add_time_in_day=True)
 train_loader, val_loader, test_loader, scaler, num_nodes = get_data_loader(args.dataset, root=args.root,
                                                                            x_offsets=args.x_offsets,
                                                                            y_offsets=args.y_offsets,
                                                                            batch_size=args.batch_size,
                                                                            test_ratio=args.test_ratio,
                                                                            val_ratio=args.val_ratio,
-                                                                           device=device, add_time_in_day=True)
+                                                                           add_time_in_day=True)
 model = LDSTGNN(1, args.nb_block, args.input_dim, args.K, args.nb_filter, 1,
                 args.y_offsets, args.x_offsets, num_nodes, args.d_model, args.d_k, args.d_v, args.n_heads,
                 args.dropout).to(
@@ -102,7 +110,7 @@ for p in model.parameters():
         nn.init.uniform_(p)
 print_model_parameters(model, only_num=False)
 # loss = nn.L1Loss()
-loss = scaler_Loss(scaler)
+loss = scaler_Loss(scaler, args.mae_thresh)
 optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr_init, amsgrad=False,
                              weight_decay=args.weight_decay)
 # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer=optimizer, T_0=args.T_0,

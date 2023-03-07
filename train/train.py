@@ -79,6 +79,8 @@ class Trainer(object):
 
         with torch.no_grad():
             for batch_idx, (x, y) in enumerate(self.val_loader):
+                x = x.to(self.device)
+                y = y.to(self.device)
                 output, _ = self.model(x)
                 loss = self.loss(output, y)
                 if not torch.isnan(loss):
@@ -92,6 +94,8 @@ class Trainer(object):
         total_loss = 0
         for batch_idx, (x, y) in enumerate(self.train_loader):
             self.optimizer.zero_grad(set_to_none=True)
+            x = x.to(self.device)
+            y = y.to(self.device)
             output, structure_kl_loss_sum = self.model(x, decay_interval=self.decay_interval, decay_r=self.decay_r,
                                                        current_epoch=epoch, init_r=self.init_r, final_r=self.final_r)
             if self.use_curriculum_learning and task_level is not None:
@@ -181,6 +185,8 @@ class Trainer(object):
         y_true = []
         with torch.no_grad():
             for batch_idx, (x, y) in enumerate(data_loader):
+                x = x.to(device)
+                y = y.to(device)
                 output, _ = model(x)
                 output = scaler.inverse_transform(output).cpu().numpy()
                 y = scaler.inverse_transform(y).cpu().numpy()
@@ -261,6 +267,8 @@ class NNITrainer(Trainer):
         y_true = []
         with torch.no_grad():
             for batch_idx, (x, y) in enumerate(data_loader):
+                x = x.to(device)
+                y = y.to(device)
                 output, _ = model(x)
                 output = scaler.inverse_transform(output).cpu().numpy()
                 y = scaler.inverse_transform(y).cpu().numpy()

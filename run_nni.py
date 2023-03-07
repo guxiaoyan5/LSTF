@@ -46,8 +46,8 @@ args.add_argument('--final_r', default=0.5, type=float)
 args.add_argument('--init_r', default=0.5, type=float)
 args.add_argument('--dropout', default=0.3, type=float)
 # test
-args.add_argument('--mae_thresh', default=None, type=eval)
-args.add_argument('--mape_thresh', default=0.99, type=float)
+args.add_argument('--mae_thresh', default=0.5, type=eval)
+args.add_argument('--mape_thresh', default=0.5, type=float)
 
 # log
 args.add_argument('--path', default='./logs', type=str)
@@ -99,7 +99,7 @@ def main(params):
             nn.init.uniform_(p)
     print_model_parameters(model, only_num=False)
     # loss = nn.L1Loss()
-    loss = scaler_Loss(scaler)
+    loss = scaler_Loss(scaler, args.mae_thresh)
     optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr_init, amsgrad=True,
                                  weight_decay=args.weight_decay)
     # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer=optimizer, T_0=args.T_0,
