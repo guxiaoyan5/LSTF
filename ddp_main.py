@@ -7,7 +7,7 @@ import time
 import os
 from os.path import join
 
-from dataset.load_dataset import get_data_loader, load_distance
+from dataset.load_dataset import get_data_loader, load_distance, get_data_loader_ddp
 from models.LDSTGNN import *
 from train.train import Trainer, print_model_parameters
 from utils.adjacency import *
@@ -26,7 +26,7 @@ args.add_argument('--output_dim', default=1, type=int)
 args.add_argument('--num_workers', default=0, type=int)
 args.add_argument('--pin_memory', default=False, type=bool)
 # train
-args.add_argument('--batch_size', default=32, type=int)
+args.add_argument('--batch_size', default=16, type=int)
 args.add_argument('--epochs', default=100, type=int)
 args.add_argument('--lr_init', default=0.001, type=float)
 args.add_argument('--lr_decay', default=True, type=eval)
@@ -62,7 +62,7 @@ args.add_argument('--path', default='./logs', type=str)
 args.add_argument('--log_step', default=20, type=int)
 args.add_argument('--comment', default="", type=str)
 args.add_argument('--model_name', default="LDSTGNN", type=str)
-args.add_argument('--cuda', default=0, type=int)
+args.add_argument('--local_rank', default=-1, type=int)
 
 args = args.parse_known_args()[0]
 random.seed(args.seed)
@@ -71,8 +71,9 @@ torch.manual_seed(args.seed)
 torch.cuda.manual_seed(args.seed)
 torch.cuda.cudnn_enabled = False
 torch.backends.cudnn.deterministic = True
-
-device = torch.device('cuda:{}'.format(args.cuda) if torch.cuda.is_available() else 'cpu')
+torch.distributed.init_process_group(backend="nccl")
+torch.cuda.set_device(args.local_rank)
+device = torch.device('cuda:{}'.format(args.local_rank) if torch.cuda.is_available() else 'cpu')
 # device = torch.device('cpu')
 save_name = time.strftime(
     "%m-%d-%Hh%Mm") + args.comment + "_" + args.dataset + "_" + args.model_name + "nb_block" + str(args.nb_block) + "_K" \
@@ -92,17 +93,23 @@ else:
 #                                                                            test_ratio=args.test_ratio,
 #                                                                            val_ratio=args.val_ratio,
 #                                                                            device=device, add_time_in_day=True)
-train_loader, val_loader, test_loader, scaler, num_nodes = get_data_loader(args.dataset, root=args.root,
-                                                                           x_offsets=args.x_offsets,
-                                                                           y_offsets=args.y_offsets,
-                                                                           batch_size=args.batch_size,
-                                                                           test_ratio=args.test_ratio,
-                                                                           val_ratio=args.val_ratio,
-                                                                           add_time_in_day=True)
+train_loader, val_loader, test_loader, scaler, num_nodes = get_data_loader_ddp(args.dataset, root=args.root,
+                                                                               x_offsets=args.x_offsets,
+                                                                               y_offsets=args.y_offsets,
+                                                                               batch_size=args.batch_size,
+                                                                               test_ratio=args.test_ratio,
+                                                                               val_ratio=args.val_ratio,
+                                                                               add_time_in_day=True)
 model = LDSTGNN(1, args.nb_block, args.input_dim, args.K, args.nb_filter, 1,
                 args.y_offsets, args.x_offsets, num_nodes, args.d_model, args.d_k, args.d_v, args.n_heads,
                 args.dropout).to(
     device)
+model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)  # 设置多个gpu的BN同步
+model = torch.nn.parallel.DistributedDataParallel(model,
+                                                  device_ids=[args.local_rank],
+                                                  output_device=args.local_rank,
+                                                  find_unused_parameters=True,
+                                                  broadcast_buffers=False)
 for p in model.parameters():
     if p.dim() > 1:
         nn.init.xavier_uniform_(p)

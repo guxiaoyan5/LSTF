@@ -160,7 +160,59 @@ def get_data_loader(dataset: str = "PEMS08", root: str = "data", x_offsets: int 
     return train_loader, val_loader, test_loader, scaler, num_nodes
 
 
-if __name__ == '__main__':
-    for i in tqdm(["PEMS03", "PEMS04", "PEMS07", "PEMS08"]):
-        generate_dtw_distance(i, "../data")
-    pass
+def get_data_loader_ddp(dataset: str = "PEMS08", root: str = "data", x_offsets: int = 12, y_offsets: int = 12,
+                        add_time_in_day: bool = True, interval: int = 5, val_ratio: float = 0.2,
+                        test_ratio: float = 0.2, batch_size=64, device=torch.device('cpu'),
+                        add_day_in_weekday: bool = False):
+    """
+    :param add_day_in_weekday:
+    :param device:
+    :param batch_size:
+    :param val_ratio:
+    :param test_ratio:
+    :param dataset:
+    :param root:
+    :param x_offsets:
+    :param y_offsets:
+    :param add_time_in_day:
+    :param interval: 每5分钟间隔
+    :return:
+    """
+    data = load_data(dataset, root)
+    num_samples, num_nodes = data.shape[0], data.shape[1]
+    scaler = StandardScaler()
+    scaler.fit(data)
+    data = scaler.transform(data)
+    if add_time_in_day:
+        t = int((24 * 60) / interval)
+        day = num_samples // t + 1
+        time_in_day = np.tile(np.tile(np.arange(0, t) / t, [day]), [1, num_nodes, 1]).transpose((2, 1, 0))[:num_samples]
+        data = np.concatenate((data, time_in_day), axis=-1)
+    if add_day_in_weekday:
+        t = int((24 * 60) / interval)
+        day = num_samples // t + 1
+        weekday = day // 7 + 1
+        day_in_weekday = np.tile(np.arange(0, 7) / 7, [t, weekday]).transpose((1, 0)).reshape(-1)
+        day_in_weekday = np.tile(day_in_weekday, [1, num_nodes, 1]).transpose((2, 1, 0))[:num_samples]
+        data = np.concatenate((data, day_in_weekday), axis=-1)
+    train_data, val_data, test_data = split_data_by_ratio(data, val_ratio=val_ratio, test_ratio=test_ratio)
+    x_train, y_train = generate_sequence(train_data, x_offsets=x_offsets, y_offsets=y_offsets)
+    x_test, y_test = generate_sequence(test_data, x_offsets=x_offsets, y_offsets=y_offsets)
+    x_val, y_val = generate_sequence(val_data, x_offsets=x_offsets, y_offsets=y_offsets)
+    train_set = STDataset(torch.tensor(x_train, dtype=torch.float), torch.tensor(y_train, dtype=torch.float),
+                          device=device, dataset=dataset)
+    train_sample = DistributedSampler(train_set)
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=False, pin_memory=True, sampler=train_sample,
+                              drop_last=True)
+    test_loader = DataLoader(
+        STDataset(torch.tensor(x_test, dtype=torch.float), torch.tensor(y_test, dtype=torch.float),
+                  device=device, dataset=dataset), batch_size=batch_size, shuffle=False)
+    val_loader = DataLoader(
+        STDataset(torch.tensor(x_val, dtype=torch.float), torch.tensor(y_val, dtype=torch.float),
+                  device=device, dataset=dataset), batch_size=batch_size, shuffle=False)
+    print('mean:', scaler.mean, " std:", scaler.std)
+    print('train shape:', train_data.shape)
+    print('test shape:', test_data.shape)
+    print('val shape:', val_data.shape)
+    return train_loader, val_loader, test_loader, scaler, num_nodes
+

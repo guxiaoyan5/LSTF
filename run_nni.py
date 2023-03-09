@@ -33,7 +33,7 @@ args.add_argument('--epochs', default=100, type=int)
 args.add_argument('--lr_init', default=0.001, type=float)
 args.add_argument('--lr_decay', default=True, type=eval)
 args.add_argument('--early_stop', default=True, type=eval)
-args.add_argument('--early_stop_patience', default=60, type=int)
+args.add_argument('--early_stop_patience', default=20, type=int)
 args.add_argument('--use_curriculum_learning', action='store_true', default=False)
 args.add_argument('--grad_norm', default=True, type=eval)
 args.add_argument('--max_grad_norm', default=5, type=int)
@@ -46,7 +46,7 @@ args.add_argument('--final_r', default=0.5, type=float)
 args.add_argument('--init_r', default=0.5, type=float)
 args.add_argument('--dropout', default=0.3, type=float)
 # test
-args.add_argument('--mae_thresh', default=0.5, type=eval)
+args.add_argument('--mae_thresh', default=None, type=eval)
 args.add_argument('--mape_thresh', default=0.5, type=float)
 
 # log
