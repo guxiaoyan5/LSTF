@@ -426,10 +426,10 @@ class DDPTrainer(object):
                 task_level = self.args.y_offsets
             self.train_loader.sampler.set_epoch(epoch)
             train_epoch_loss, batches_seen = self.train_epoch(epoch, batches_seen, task_level)
-            val_epoch_loss = self.val_epoch(epoch)
-            train_loss_list.append(train_epoch_loss)
-            val_loss_list.append(val_epoch_loss)
             if dist.get_rank() == 0:
+                val_epoch_loss = self.val_epoch(epoch)
+                train_loss_list.append(train_epoch_loss)
+                val_loss_list.append(val_epoch_loss)
                 if train_epoch_loss > 1e6:
                     self.logger.warning('Gradient explosion detected. Ending...')
                     break
@@ -447,7 +447,7 @@ class DDPTrainer(object):
                         break
                 if best_state:
                     self.logger.info('*********************************Current best model saved!')
-                    best_model = copy.deepcopy(self.model.moudle.state_dict())
+                    best_model = copy.deepcopy(self.model.module.state_dict())
         if dist.get_rank() == 0:
             np.save(self.log_dir + '/{}_train_loss.npy'.format(self.dataset), numpy.array(train_loss_list))
             np.save(self.log_dir + '/{}_val_loss.npy'.format(self.dataset), numpy.array(val_loss_list))

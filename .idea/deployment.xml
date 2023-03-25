@@ -11,6 +11,7 @@
           <excludedPaths>
             <excludedPath local="true" path="$PROJECT_DIR$/data" />
             <excludedPath path="/data/guyanjie/LSTF/logs" />
+            <excludedPath local="true" path="$PROJECT_DIR$/logs" />
           </excludedPaths>
         </serverdata>
       </paths>
